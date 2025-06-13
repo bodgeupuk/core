@@ -10,7 +10,12 @@ from syrupy.assertion import SnapshotAssertion
 from homeassistant.components.google_generative_ai_conversation import (
     async_migrate_entry,
 )
-from homeassistant.components.google_generative_ai_conversation.const import DOMAIN
+from homeassistant.components.google_generative_ai_conversation.const import (
+    DEFAULT_AI_TASK_NAME,
+    DEFAULT_CONVERSATION_NAME,
+    DOMAIN,
+    RECOMMENDED_AI_TASK_OPTIONS,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -441,16 +446,27 @@ async def test_migration_from_v1_to_v2(
     assert mock_config_entry.data == {"api_key": "1234"}
     assert mock_config_entry.options == {}
 
-    assert len(mock_config_entry.subentries) == 1
+    assert len(mock_config_entry.subentries) == 2
 
-    subentry = next(iter(mock_config_entry.subentries.values()))
-    assert subentry.unique_id is None
-    assert subentry.title == "Google Conversation"
-    assert subentry.subentry_type == "conversation"
-    assert subentry.data == OPTIONS
+    subentries = {
+        subentry.subentry_type: subentry
+        for subentry in mock_config_entry.subentries.values()
+    }
+
+    conversation_subentry = subentries["conversation"]
+    assert conversation_subentry.unique_id is None
+    assert conversation_subentry.title == DEFAULT_CONVERSATION_NAME
+    assert conversation_subentry.subentry_type == "conversation"
+    assert conversation_subentry.data == OPTIONS
 
     migrated_entity = entity_registry.async_get(entity.entity_id)
     assert migrated_entity is not None
     assert migrated_entity.config_entry_id == mock_config_entry.entry_id
-    assert migrated_entity.config_subentry_id == subentry.subentry_id
+    assert migrated_entity.config_subentry_id == conversation_subentry.subentry_id
     assert migrated_entity.device_id == device.id
+
+    ai_task_subentry = subentries["ai_task"]
+    assert ai_task_subentry.unique_id is None
+    assert ai_task_subentry.title == DEFAULT_AI_TASK_NAME
+    assert ai_task_subentry.subentry_type == "ai_task"
+    assert ai_task_subentry.data == RECOMMENDED_AI_TASK_OPTIONS

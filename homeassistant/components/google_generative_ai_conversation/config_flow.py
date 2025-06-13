@@ -45,9 +45,12 @@ from .const import (
     CONF_TOP_K,
     CONF_TOP_P,
     CONF_USE_GOOGLE_SEARCH_TOOL,
+    DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DOMAIN,
+    RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CHAT_MODEL,
+    RECOMMENDED_CONVERSATION_OPTIONS,
     RECOMMENDED_HARM_BLOCK_THRESHOLD,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_TEMPERATURE,
@@ -64,12 +67,6 @@ STEP_API_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_API_KEY): str,
     }
 )
-
-RECOMMENDED_OPTIONS = {
-    CONF_RECOMMENDED: True,
-    CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
-    CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
-}
 
 
 async def validate_input(data: dict[str, Any]) -> None:
@@ -121,10 +118,16 @@ class GoogleGenerativeAIConfigFlow(ConfigFlow, domain=DOMAIN):
                     subentries=[
                         {
                             "subentry_type": "conversation",
-                            "data": RECOMMENDED_OPTIONS,
+                            "data": RECOMMENDED_CONVERSATION_OPTIONS,
                             "title": DEFAULT_CONVERSATION_NAME,
                             "unique_id": None,
-                        }
+                        },
+                        {
+                            "subentry_type": "ai_task",
+                            "data": RECOMMENDED_AI_TASK_OPTIONS,
+                            "title": DEFAULT_AI_TASK_NAME,
+                            "unique_id": None,
+                        },
                     ],
                 )
         return self.async_show_form(
@@ -170,10 +173,13 @@ class GoogleGenerativeAIConfigFlow(ConfigFlow, domain=DOMAIN):
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return subentries supported by this integration."""
-        return {"conversation": ConversationSubentryFlowHandler}
+        return {
+            "conversation": LLMSubentryFlowHandler,
+            "ai_task": LLMSubentryFlowHandler,
+        }
 
 
-class ConversationSubentryFlowHandler(ConfigSubentryFlow):
+class LLMSubentryFlowHandler(ConfigSubentryFlow):
     """Flow for managing conversation subentries."""
 
     last_rendered_recommended = False
@@ -190,7 +196,10 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Add a subentry."""
         self.is_new = True
-        self.start_data = RECOMMENDED_OPTIONS.copy()
+        if self._subentry_type == "ai_task":
+            self.start_data = RECOMMENDED_AI_TASK_OPTIONS.copy()
+        else:
+            self.start_data = RECOMMENDED_CONVERSATION_OPTIONS.copy()
         return await self.async_step_set_options()
 
     async def async_step_reconfigure(
@@ -212,7 +221,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
             if user_input[CONF_RECOMMENDED] == self.last_rendered_recommended:
                 if not user_input.get(CONF_LLM_HASS_API):
                     user_input.pop(CONF_LLM_HASS_API, None)
-                # Don't allow to save options that enable the Google Seearch tool with an Assist API
+                # Don't allow to save options that enable the Google Search tool with an Assist API
                 if not (
                     user_input.get(CONF_LLM_HASS_API)
                     and user_input.get(CONF_USE_GOOGLE_SEARCH_TOOL, False) is True
@@ -238,7 +247,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
             self.last_rendered_recommended = options.get(CONF_RECOMMENDED, False)
 
         schema = await google_generative_ai_config_option_schema(
-            self.hass, self.is_new, options, self._genai_client
+            self.hass, self.is_new, self._subentry_type, options, self._genai_client
         )
         return self.async_show_form(
             step_id="set_options", data_schema=vol.Schema(schema), errors=errors
@@ -248,6 +257,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
 async def google_generative_ai_config_option_schema(
     hass: HomeAssistant,
     is_new: bool,
+    subentry_type: str,
     options: Mapping[str, Any],
     genai_client: genai.Client,
 ) -> dict:
@@ -265,37 +275,56 @@ async def google_generative_ai_config_option_schema(
         suggested_llm_apis = [suggested_llm_apis]
 
     if is_new:
+        if CONF_NAME in options:
+            default_name = options[CONF_NAME]
+        elif subentry_type == "ai_task":
+            default_name = DEFAULT_AI_TASK_NAME
+        else:
+            default_name = DEFAULT_CONVERSATION_NAME
         schema: dict[vol.Required | vol.Optional, Any] = {
-            vol.Required(CONF_NAME, default=DEFAULT_CONVERSATION_NAME): str,
+            vol.Required(CONF_NAME, default=default_name): str,
         }
     else:
         schema = {}
 
-    schema.update(
-        {
-            vol.Optional(
-                CONF_PROMPT,
-                description={
-                    "suggested_value": options.get(
-                        CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
-                    )
-                },
-            ): TemplateSelector(),
-            vol.Optional(
-                CONF_LLM_HASS_API,
-                description={"suggested_value": suggested_llm_apis},
-            ): SelectSelector(SelectSelectorConfig(options=hass_apis, multiple=True)),
-            vol.Required(
-                CONF_RECOMMENDED, default=options.get(CONF_RECOMMENDED, False)
-            ): bool,
-        }
-    )
+    if subentry_type == "conversation":
+        schema.update(
+            {
+                vol.Optional(
+                    CONF_PROMPT,
+                    description={
+                        "suggested_value": options.get(
+                            CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
+                        )
+                    },
+                ): TemplateSelector(),
+                vol.Optional(
+                    CONF_LLM_HASS_API,
+                    description={"suggested_value": suggested_llm_apis},
+                ): SelectSelector(
+                    SelectSelectorConfig(options=hass_apis, multiple=True)
+                ),
+                vol.Required(
+                    CONF_RECOMMENDED, default=options.get(CONF_RECOMMENDED, False)
+                ): bool,
+            }
+        )
+    else:
+        # For ai_task and tts subentry types
+        schema.update(
+            {
+                vol.Required(
+                    CONF_RECOMMENDED, default=options.get(CONF_RECOMMENDED, False)
+                ): bool,
+            }
+        )
 
     if options.get(CONF_RECOMMENDED):
         return schema
 
     api_models_pager = await genai_client.aio.models.list(config={"query_base": True})
     api_models = [api_model async for api_model in api_models_pager]
+
     models = [
         SelectOptionDict(
             label=api_model.display_name,
@@ -391,13 +420,17 @@ async def google_generative_ai_config_option_schema(
                 },
                 default=RECOMMENDED_HARM_BLOCK_THRESHOLD,
             ): harm_block_thresholds_selector,
+        }
+    )
+    if subentry_type == "conversation":
+        schema[
             vol.Optional(
                 CONF_USE_GOOGLE_SEARCH_TOOL,
                 description={
                     "suggested_value": options.get(CONF_USE_GOOGLE_SEARCH_TOOL),
                 },
                 default=RECOMMENDED_USE_GOOGLE_SEARCH_TOOL,
-            ): bool,
-        }
-    )
+            )
+        ] = bool
+
     return schema

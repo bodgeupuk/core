@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 from pathlib import Path
+from types import MappingProxyType
 
 from google.genai import Client
 from google.genai.errors import APIError, ClientError
@@ -33,10 +34,12 @@ from homeassistant.helpers.typing import ConfigType
 from .const import (
     CONF_CHAT_MODEL,
     CONF_PROMPT,
+    DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DOMAIN,
     FILE_POLLING_INTERVAL_SECONDS,
     LOGGER,
+    RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CHAT_MODEL,
     TIMEOUT_MILLIS,
 )
@@ -47,6 +50,7 @@ CONF_FILENAMES = "filenames"
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = (
+    Platform.AI_TASK,
     Platform.CONVERSATION,
     Platform.TTS,
 )
@@ -219,7 +223,7 @@ async def async_migrate_entry(
     if entry.version == 1:
         # Migrate from version 1 to version 2
         # Move conversation-specific options to a subentry
-        subentry = ConfigSubentry(
+        conversation_subentry = ConfigSubentry(
             data=entry.options,
             subentry_type="conversation",
             title=DEFAULT_CONVERSATION_NAME,
@@ -227,7 +231,16 @@ async def async_migrate_entry(
         )
         hass.config_entries.async_add_subentry(
             entry,
-            subentry,
+            conversation_subentry,
+        )
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=MappingProxyType(RECOMMENDED_AI_TASK_OPTIONS),
+                subentry_type="ai_task",
+                title=DEFAULT_AI_TASK_NAME,
+                unique_id=None,
+            ),
         )
 
         # Migrate conversation entity to be linked to subentry
@@ -236,8 +249,8 @@ async def async_migrate_entry(
             if entity_entry.domain == Platform.CONVERSATION:
                 ent_reg.async_update_entity(
                     entity_entry.entity_id,
-                    config_subentry_id=subentry.subentry_id,
-                    new_unique_id=subentry.subentry_id,
+                    config_subentry_id=conversation_subentry.subentry_id,
+                    new_unique_id=conversation_subentry.subentry_id,
                 )
                 break
 
