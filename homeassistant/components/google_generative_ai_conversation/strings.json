@@ -62,10 +62,10 @@
     },
     "ai_task": {
       "initiate_flow": {
-        "user": "Add AI task entity",
-        "reconfigure": "Reconfigure AI task entity"
+        "user": "Add AI task service",
+        "reconfigure": "Reconfigure AI task service"
       },
-      "entry_type": "AI task entity",
+      "entry_type": "AI task service",
       "step": {
         "set_options": {
           "data": {
