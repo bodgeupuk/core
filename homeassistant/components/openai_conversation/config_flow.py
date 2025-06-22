@@ -150,14 +150,17 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
     """Flow for managing conversation subentries."""
 
     last_rendered_recommended = False
-    is_new: bool
     options: dict[str, Any]
+
+    @property
+    def _is_new(self) -> bool:
+        """Return if this is a new subentry."""
+        return self.source == "user"
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Add a subentry."""
-        self.is_new = True
         self.options = RECOMMENDED_OPTIONS.copy()
         return await self.async_step_init()
 
@@ -165,7 +168,6 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Handle reconfiguration of a subentry."""
-        self.is_new = False
         self.options = self._get_reconfigure_subentry().data.copy()
         return await self.async_step_init()
 
@@ -189,7 +191,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
 
         step_schema: VolDictType = {}
 
-        if self.is_new:
+        if self._is_new:
             step_schema[vol.Required(CONF_NAME, default=DEFAULT_CONVERSATION_NAME)] = (
                 str
             )
@@ -218,7 +220,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
                 user_input.pop(CONF_LLM_HASS_API, None)
 
             if user_input[CONF_RECOMMENDED]:
-                if self.is_new:
+                if self._is_new:
                     return self.async_create_entry(
                         title=user_input.pop(CONF_NAME),
                         data=user_input,
@@ -352,7 +354,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
             }
 
         if not step_schema:
-            if self.is_new:
+            if self._is_new:
                 return self.async_create_entry(
                     title=options.pop(CONF_NAME, DEFAULT_CONVERSATION_NAME),
                     data=options,
@@ -374,7 +376,7 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
                     options.pop(CONF_WEB_SEARCH_TIMEZONE, None)
 
             options.update(user_input)
-            if self.is_new:
+            if self._is_new:
                 return self.async_create_entry(
                     title=options.pop(CONF_NAME, DEFAULT_CONVERSATION_NAME),
                     data=options,
