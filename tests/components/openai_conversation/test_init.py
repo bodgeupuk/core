@@ -14,10 +14,7 @@ from openai.types.images_response import ImagesResponse
 from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
 import pytest
 
-from homeassistant.components.openai_conversation import (
-    CONF_FILENAMES,
-    async_migrate_entry,
-)
+from homeassistant.components.openai_conversation import CONF_FILENAMES
 from homeassistant.components.openai_conversation.const import (
     DEFAULT_CONVERSATION_NAME,
     DOMAIN,
@@ -557,14 +554,14 @@ async def test_migration_from_v1_to_v2(
         "recommended": True,
         "llm_hass_api": ["assist"],
         "prompt": "You are a helpful assistant",
-        "chat_model": "models/gemini-2.0-flash",
+        "chat_model": "gpt-4o-mini",
     }
     mock_config_entry = MockConfigEntry(
         domain=DOMAIN,
         data={"api_key": "1234"},
         options=OPTIONS,
         version=1,
-        title="Google Generative AI",
+        title="ChatGPT",
     )
     mock_config_entry.add_to_hass(hass)
 
@@ -586,9 +583,12 @@ async def test_migration_from_v1_to_v2(
     )
 
     # Run migration
-    result = await async_migrate_entry(hass, mock_config_entry)
+    with patch(
+        "homeassistant.components.openai_conversation.async_setup_entry",
+        return_value=True,
+    ):
+        assert await async_setup_component(hass, DOMAIN, {})
 
-    assert result is True
     assert mock_config_entry.version == 2
     assert mock_config_entry.data == {"api_key": "1234"}
     assert mock_config_entry.options == {}
